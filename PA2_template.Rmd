@@ -1,0 +1,424 @@
+---
+title: "Reproducible Research - Peer Assessment 2"
+author: "Amir Azmi (https://github.com/amirmazmi/RepData_PeerAssessment2)"
+date: "April 10, 2017"
+
+output: 
+    html_document:
+        keep_md: yes  
+        
+---
+
+```{r setup, include=FALSE, cache=T}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+----  
+
+
+## **Synopsis**
+
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.  
+<br>  
+  
+The main focus will be to answer the following questions:
+
+1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+<br><br>  
+
+----  
+
+### **Quickjump**:
+
+1. [Subsetting columns](#subsetcol)
+2. [Subsetting rows](#subsetrows)
+3. [Processing events](#events)
+4. [Processing damage](#damage)
+5. [Results](#results)
+6. [Environment](#environment)
+
+
+<br><br>  
+
+----  
+
+## **Source**
+
+Below are links for the information used in this analysis:
+
+1. [Data (bzip2/CSV)](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) 
+
+2. [National Weather Service Storm Data Documentation (PDF)](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)  
+
+3. [National Climatic Data Center Storm Events FAQ (PDF)](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
+
+<br><br>  
+
+----  
+<br><br>  
+
+
+
+## **Data Processing**
+
+
+The following packages are required. Here the library pacman will load the libraries if available and if not, install and load. 
+```{r library, warning=F, message=F}
+library(pacman)
+
+p_load(R.utils, 
+        xtable,
+        data.table,
+        lubridate,
+        dplyr,
+        ggplot2,
+        parallel,
+        gridExtra,
+        scales)
+
+```
+<br>  
+  
+First get the data and load a few rows.  
+
+```{r downloaddata, cache=T}
+
+#check directory and create
+setwd("F:/Coursera/05 Reproducible Research/Project/Wk 4/submission")
+if ( !file.exists( "data" )) {
+    dir.create ( "data" )
+    }
+
+targ_url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+downloadDate <- "Mon Apr 10 14.57.02 2017" #gsub(":",".",date())
+destfile <- paste0("./data/storm-data",downloadDate,".bz2" )
+decofile <- paste0("./data/storm-data",downloadDate,".csv" )
+
+# if file does not exist, get it
+if( !file.exists(destfile)){
+    download.file( targ_url, destfile=destfile, method="curl")
+    }
+
+# if uncompressed, liberate it
+if( !file.exists(decofile)){
+    bunzip2( destfile, decofile, remove=F, skip=T )
+}
+
+
+df <- fread(decofile, header = TRUE, nrows=5000)
+```
+
+Data was downloaded on Mon Apr 10 14.57.02 2017.  
+
+<br><br>
+
+### Subsetting columns {#subsetcols}
+
+Begin by inspecting the column names.
+
+```{r inspectheaders}
+names(df)
+```
+<br><br>
+Here only the following variables are of interest: 
+
+1. BGN_DATE - Date  
+2. EVTYPE - Event type  
+3. FATALITIES - No. of fatalities  
+4. INJURIES - No. of injuries  
+5. PROPDMG - Property damage (USD)  
+6. PROPDMGEXP - Exponent for property damage amount 
+7. CROPDMG - Crop damage  
+8. CROPDMGEXP - Exponent for crop damage amount  
+
+
+<br><br>
+
+
+Next we load the full data with the desired column and perform some simple inspection.
+```{r loadfull, cache=T, message=F, warnings=F}
+df1 <- fread(decofile,header=TRUE, stringsAsFactors= T, showProgress=F)[,c("BGN_DATE","EVTYPE","FATALITIES",
+    "INJURIES","PROPDMG","PROPDMGEXP","CROPDMG","CROPDMGEXP")]
+
+dim(df1)
+str(df1)
+```
+<br>
+
+### Subsetting rows {#subsetrows}  
+
+
+Before proceeding further, is it noted in the [documentation for the database for event types](https://www.ncdc.noaa.gov/stormevents/details.jsp?type=eventtype) that the later years account for more observations.
+
+```{r year-count, results='asis', cache=T}
+df1$year <- year(mdy_hms(df1$BGN_DATE))
+years <- xtable(table(df1$year, dnn="Year Count"),caption="", align="cc")
+print( years, type="html", html.table.attributes="width=250 class='table-bordered'")
+```
+<br>
+
+
+
+
+Also, when inspecting the quantiles, 75% of the data lies after 1995.
+
+```{r year-quantile}
+quantile(df1$year)
+```
+<br>
+
+
+
+Therefore, subset the data for records starting from 1996.
+
+```{r subset-year, cache=T}
+df1 <- df1[df1$year >= 1996]
+
+dim(df1)
+```
+<br><br><br>
+
+
+
+
+### Processing event types {#events}
+
+
+
+
+
+It is necessary to make sure the event types are categorized properly without any duplication. 
+
+```{r event}
+length(unique(levels(df1$EVTYPE)))
+```
+Looking at the unique event types, there are close to 1000 different types.
+
+<br> 
+
+
+
+
+
+One event type that stands out is one that is labeled as "Summary" which is definitely not an event but rather an annotation in the data set itself. And so these rows needs to be removed from the data frame itself. 
+
+
+```{r summary-event}
+df1$EVTYPE <- as.character(df1$EVTYPE)
+
+grep("summary", df1$EVTYPE, value=T, ignore.case=T)
+
+df1 <- df1[!grep("summary ", df1$EVTYPE, ignore.case=T),]
+df1 <- df1[!grep("summary:", df1$EVTYPE, ignore.case=T),]
+
+dim(df1)
+```
+<br><br>
+
+
+
+
+
+Here a simple inspection indicates that there are similar types even for winter. This needs to be simplified into broader categories. 
+
+```{r event-types}
+tail(unique(df1$EVTYPE),30)
+```
+<br>
+
+
+
+
+
+
+Simplifying these into 12 broader categories using a replacement table. 
+```{r events-table}
+
+rep.list <- list(
+        c("fire|smoke","Fire & Smoke"),
+        c("volcan|vog","Volcanic Activity"),
+        c("dust", "Dust"),
+        c("precipitation|rain|hail|drizzle|wet| precip|burst|depression|fog|wall cloud","Fog & Precipitate"),
+        c("tornado|spout|funnel|whirlwind","Tornado"),
+        c("warmth|warm|heat|dry|hot|drought|thermia|temperature record|record temperature|record high","Heat & Drought"),
+        c("flood|surf|blow-out|swells|fld|dam break|seiche|sea|current|tide|wave|water|tsunami","Flooding & High Surf"),
+        c("slide|erosion|slump","Erosion & Landslide"),
+        c("ice|icy|frost|freeze|snow|winter|wintry|wintery|blizzard|freezing|avalanche|glaze|sleet|chill","Ice & Snow"),
+        c("wind|wnd|storm|hurricane|typhoon|lightning|tstm","Storm & Winds"),
+        c("cold|cool","Cold Weather"),
+        c("other|none|lights|drowning|monthly|accident|criteria|driest|remnants|severe","Other")
+    )
+
+rep.event <- setNames(do.call(rbind.data.frame, rep.list), c("pattern","category"))
+
+rep.event
+
+```
+
+```{r replace-events, message=F, warning=F, cache=T}
+eventfunc <- function( pattern, category){
+    df1[ grep( pattern, df1$EVTYPE, ignore.case=T), "EVTYPE"] <- category
+}
+
+df1$EVTYPE <- mapply(eventfunc, rep.event$pattern, rep.event$category)
+
+df1$EVTYPE <- as.factor(df1$EVTYPE)
+
+length(unique(df1$EVTYPE))
+
+```
+<br><br><br>
+
+
+
+
+### Processing damage {#damage}
+
+<br>
+The variables for propert damage and crop damage, both have another variable for its exponential. Where,
+$$Total Property Damage = PROPDMG * 10^{PROPDMGEXP} $$  
+Similarly, 
+
+$$ Total Crop Damage = CROPDMG * 10^{CROPDMGEXP} $$  
+<br><br>
+
+
+
+Inspecting the variable produces:
+
+```{r exponents}
+levels(df1$PROPDMGEXP)
+levels(df1$CROPDMGEXP)
+```
+<br>
+
+
+
+Since the variables are mixed, it is possible to create a lookup table based on these variable then, a function to convert varying exponential to integers. 
+
+
+```{r exp-lookup}
+#create look up table
+x1 <- unique(toupper(c(levels(df1$PROPDMGEXP),levels(df1$CROPDMGEXP))))
+y1 <- c(rep(0,4),x1[5:12],0,9,2,3,6)
+convtable <- data.frame(old=x1, new=y1)
+```
+<br>
+
+
+
+The table:
+```{r lookup}
+
+convtable
+
+```
+<br>
+
+
+
+
+Continuing with creating the converter function and apply to the dataset.
+
+```{r convert-exp, cache=T}
+
+#define function to convert using table
+expfunc <- function(val, expo){
+                if (is.na(val)) { val <- 0}
+                if (is.na(expo)) { expo <- 0}
+                expo <- as.character(expo)
+                expo <- convtable[convtable$old==expo,2]
+                expo <- as.numeric(expo)
+                totval <- val*(10^expo)
+            return (totval)
+            }
+
+df1$propdamage <- mapply(expfunc, df1$PROPDMG, df1$PROPDMGEXP)
+df1$cropdamage <- mapply(expfunc, df1$CROPDMG, df1$CROPDMGEXP)
+
+```
+
+<br>
+  
+----  
+
+
+## **Results** {#results}
+
+<br>
+**1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?**
+
+```{r Q1}
+health <- df1 %>% group_by(EVTYPE) %>%
+            summarize( injuries = sum(INJURIES), fatalities = sum(FATALITIES)) %>%
+             arrange(desc(injuries,fatalities))
+
+gginjury <- ggplot(health, aes(x=reorder(EVTYPE,-injuries), y=injuries)) +
+    geom_bar(fill="blue", stat="identity") +
+    xlab(NULL) +
+    ylab("Injuries") +
+    coord_cartesian( ylim=c(3000,6000)) +
+    ggtitle("Injuries") +
+    theme(axis.text.x= element_text(angle=40, hjust=1), plot.title = element_text(hjust=0.5, size=rel(1.3)))
+
+ggfatal <- ggplot( health, aes(x=reorder(EVTYPE,-fatalities), y=fatalities)) +
+    geom_bar( fill="red", stat="identity") +
+    xlab(NULL) +
+    ylab( "Fatalities") +
+    coord_cartesian( ylim=c(600,900)) +
+    ggtitle( "Fatalities") +
+    theme(axis.text.x= element_text(angle=40, hjust=1), plot.title = element_text(hjust=0.5, size=rel(1.3)))
+
+grid.arrange( gginjury, ggfatal, ncol=2, top="Population Health effect", bottom="Weather event")
+
+```
+
+<br><br><br>
+  
+**2. Across the United States, which types of events have the greatest economic consequences?**
+
+```{r Q2}
+
+econdamage <- df1[,c("EVTYPE","propdamage","cropdamage")] %>% 
+                 mutate(Property = propdamage/10**6, Crop=cropdamage/10**6) %>% 
+                 melt(measure.vars=c("Property","Crop") )
+                
+
+ggplot(econdamage, aes(x=reorder(EVTYPE,-value), y=value, fill=variable)) +
+    geom_bar( stat="identity") +
+    theme(axis.text.x=element_text(angle=40, hjust=1)) +
+    xlab("Weather event") + 
+    ylab("Damage in Millions USD") +
+    ggtitle("Economic impact based on events") +
+    theme( plot.title=element_text(hjust=0.5, size=rel(1.7))) +
+    scale_y_continuous(labels=comma, breaks=seq(0,2*10**6,2*10**5))
+    
+
+```
+  
+  
+  
+  
+---- 
+
+<br><br>
+
+
+
+### Environment info {#environment}  
+<br>
+
+```{r sessioninfo}
+sessionInfo()
+```
+<br><br>  
+
+
+
+
+
+
