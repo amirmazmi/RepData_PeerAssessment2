@@ -68,7 +68,6 @@ p_load(R.utils,
         lubridate,
         dplyr,
         ggplot2,
-        parallel,
         gridExtra,
         scales)
 ```
@@ -674,8 +673,7 @@ sessionInfo()
 ## [5] LC_TIME=English_United States.1252    
 ## 
 ## attached base packages:
-## [1] parallel  stats     graphics  grDevices utils     datasets  methods  
-## [8] base     
+## [1] stats     graphics  grDevices utils     datasets  methods   base     
 ## 
 ## other attached packages:
 ##  [1] scales_0.4.1      gridExtra_2.2.1   ggplot2_2.2.1    
@@ -689,8 +687,8 @@ sessionInfo()
 ##  [9] tools_3.3.2      grid_3.3.2       gtable_0.2.0     DBI_0.6-1       
 ## [13] htmltools_0.3.5  lazyeval_0.2.0   yaml_2.1.14      rprojroot_1.2   
 ## [17] digest_0.6.12    assertthat_0.1   tibble_1.3.0     reshape2_1.4.2  
-## [21] evaluate_0.10    rmarkdown_1.4    labeling_0.3     stringi_1.1.3   
-## [25] backports_1.0.5
+## [21] codetools_0.2-15 evaluate_0.10    rmarkdown_1.4    labeling_0.3    
+## [25] stringi_1.1.3    backports_1.0.5
 ```
 <br><br>  
 

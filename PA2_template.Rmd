@@ -76,7 +76,6 @@ p_load(R.utils,
         lubridate,
         dplyr,
         ggplot2,
-        parallel,
         gridExtra,
         scales)
 
@@ -339,6 +338,7 @@ expfunc <- function(val, expo){
 
 df1$propdamage <- mapply(expfunc, df1$PROPDMG, df1$PROPDMGEXP)
 df1$cropdamage <- mapply(expfunc, df1$CROPDMG, df1$CROPDMGEXP)
+
 
 ```
 
